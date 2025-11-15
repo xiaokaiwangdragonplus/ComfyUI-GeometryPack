@@ -230,32 +230,22 @@
         <button id="saveMesh" style="background: #2a5a2a;">Save Mesh</button>
     </div>
 
-    <script type="importmap">
-    {
-        "imports": {
-            "@kitware/vtk.js/": "https://cdn.skypack.dev/@kitware/vtk.js@29.5.0/"
-        }
-    }
-    </script>
+    <script src="/extensions/ComfyUI-GeometryPack/js/vtk.js"></script>
 
-    <script type="module">
-        // CRITICAL: Import rendering profile to load WebGL backend
-        import '@kitware/vtk.js/Rendering/Profiles/Geometry';
-
-        import vtkFullScreenRenderWindow from '@kitware/vtk.js/Rendering/Misc/FullScreenRenderWindow';
-        import vtkActor from '@kitware/vtk.js/Rendering/Core/Actor';
-        import vtkMapper from '@kitware/vtk.js/Rendering/Core/Mapper';
-        import vtkSTLReader from '@kitware/vtk.js/IO/Geometry/STLReader';
-        import vtkOBJReader from '@kitware/vtk.js/IO/Misc/OBJReader';
-        import vtkXMLPolyDataReader from '@kitware/vtk.js/IO/XML/XMLPolyDataReader';
-        import vtkPolyDataNormals from '@kitware/vtk.js/Filters/Core/PolyDataNormals';
-        import vtkInteractorStyleTrackballCamera from '@kitware/vtk.js/Interaction/Style/InteractorStyleTrackballCamera';
-        import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction';
-        import vtkColorMaps from '@kitware/vtk.js/Rendering/Core/ColorMaps';
-
-        // Axis orientation widget imports
-        import vtkOrientationMarkerWidget from '@kitware/vtk.js/Interaction/Widgets/OrientationMarkerWidget';
-        import vtkAnnotatedCubeActor from '@kitware/vtk.js/Rendering/Core/AnnotatedCubeActor';
+    <script>
+        // Get VTK.js classes from global vtk object (UMD bundle)
+        const vtkFullScreenRenderWindow = vtk.Rendering.Misc.vtkFullScreenRenderWindow;
+        const vtkActor = vtk.Rendering.Core.vtkActor;
+        const vtkMapper = vtk.Rendering.Core.vtkMapper;
+        const vtkSTLReader = vtk.IO.Geometry.vtkSTLReader;
+        const vtkOBJReader = vtk.IO.Misc.vtkOBJReader;
+        const vtkXMLPolyDataReader = vtk.IO.XML.vtkXMLPolyDataReader;
+        const vtkPolyDataNormals = vtk.Filters.Core.vtkPolyDataNormals;
+        const vtkInteractorStyleTrackballCamera = vtk.Interaction.Style.vtkInteractorStyleTrackballCamera;
+        const vtkColorTransferFunction = vtk.Rendering.Core.vtkColorTransferFunction;
+        const vtkColorMaps = vtk.Rendering.Core.vtkColorMaps;
+        const vtkOrientationMarkerWidget = vtk.Interaction.Widgets.vtkOrientationMarkerWidget;
+        const vtkAnnotatedCubeActor = vtk.Rendering.Core.vtkAnnotatedCubeActor;
 
         console.log('[GeomPack VTK Fields Viewer] Initializing...');
 
@@ -275,6 +265,9 @@
             background: [0.16, 0.16, 0.16],  // #2a2a2a
             container: container,
         });
+
+        // Immediately resize to ensure canvas has correct dimensions
+        fullScreenRenderer.resize();
 
         const renderer = fullScreenRenderer.getRenderer();
         const renderWindow = fullScreenRenderer.getRenderWindow();
@@ -513,12 +506,23 @@
                 renderWindow.render();
                 console.log('[GeomPack VTK Fields Viewer DEBUG] Initial render called');
 
-                // Force a resize to ensure proper display in iframe
-                setTimeout(() => {
+                // Force a resize to ensure proper display in iframe using RAF for better timing
+                requestAnimationFrame(() => {
                     fullScreenRenderer.resize();
                     renderWindow.render();
-                    console.log('[GeomPack VTK Fields Viewer DEBUG] Post-load resize and render');
-                }, 100);
+                    console.log('[GeomPack VTK Fields Viewer DEBUG] First RAF resize and render');
+
+                    requestAnimationFrame(() => {
+                        fullScreenRenderer.resize();
+                        const camera = renderer.getActiveCamera();
+                        console.log('[GeomPack VTK Fields Viewer DEBUG] Camera clipping range BEFORE reset:', camera.getClippingRange());
+                        renderer.resetCameraClippingRange();
+                        console.log('[GeomPack VTK Fields Viewer DEBUG] Camera clipping range AFTER reset:', camera.getClippingRange());
+                        renderWindow.render();
+                        interactor.enable();
+                        console.log('[GeomPack VTK Fields Viewer DEBUG] Second RAF resize and render + interactor enabled + clipping reset');
+                    });
+                });
 
                 console.log('[GeomPack VTK Fields Viewer DEBUG] Rendering complete');
                 loading.style.display = 'none';
