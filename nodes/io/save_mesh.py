@@ -1,0 +1,109 @@
+"""
+Save Mesh Node - Save a mesh to file (OBJ, PLY, STL, OFF, etc.)
+"""
+
+import os
+
+# ComfyUI folder paths
+try:
+    import folder_paths
+    COMFYUI_OUTPUT_FOLDER = folder_paths.get_output_directory()
+except:
+    # Fallback if folder_paths not available (e.g., during testing)
+    COMFYUI_OUTPUT_FOLDER = None
+
+from .._utils import mesh_ops
+
+
+class SaveMesh:
+    """
+    Save a mesh to file (OBJ, PLY, STL, OFF, etc.)
+    Supports all formats provided by trimesh.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "trimesh": ("TRIMESH",),
+                "file_path": ("STRING", {
+                    "default": "output.obj",
+                    "multiline": False
+                }),
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("status",)
+    FUNCTION = "save_mesh"
+    CATEGORY = "geompack/io"
+    OUTPUT_NODE = True
+
+    def save_mesh(self, trimesh, file_path):
+        """
+        Save mesh to file.
+
+        Saves to ComfyUI's output folder if path is relative, otherwise uses absolute path.
+
+        Args:
+            trimesh: trimesh.Trimesh object
+            file_path: Output file path (relative to output folder or absolute)
+
+        Returns:
+            tuple: (status_message,)
+        """
+        if not file_path or file_path.strip() == "":
+            raise ValueError("File path cannot be empty")
+
+        # Debug: Check what we received
+        print(f"[SaveMesh] Received mesh type: {type(trimesh)}")
+        if trimesh is None:
+            raise ValueError("Cannot save mesh: received None instead of a mesh object. Check that the previous node is outputting a mesh.")
+
+        # Check if mesh has data
+        try:
+            vertex_count = len(trimesh.vertices) if hasattr(trimesh, 'vertices') else 0
+            face_count = len(trimesh.faces) if hasattr(trimesh, 'faces') else 0
+            print(f"[SaveMesh] Mesh has {vertex_count} vertices, {face_count} faces")
+
+            if vertex_count == 0 or face_count == 0:
+                raise ValueError(
+                    f"Cannot save empty mesh (vertices: {vertex_count}, faces: {face_count}). "
+                    "Check that the previous node is producing valid geometry."
+                )
+        except Exception as e:
+            raise ValueError(f"Error checking mesh properties: {e}. Received object may not be a valid mesh.")
+
+        # Determine full output path
+        full_path = file_path
+
+        # If path is relative and we have output folder, use it
+        if not os.path.isabs(file_path) and COMFYUI_OUTPUT_FOLDER is not None:
+            full_path = os.path.join(COMFYUI_OUTPUT_FOLDER, file_path)
+            print(f"[SaveMesh] Saving to output folder: {file_path}")
+        else:
+            print(f"[SaveMesh] Saving to: {file_path}")
+
+        # Save the mesh
+        success, error = mesh_ops.save_mesh_file(trimesh, full_path)
+
+        if not success:
+            raise ValueError(f"Failed to save trimesh: {error}")
+
+        status = f"Successfully saved mesh to: {full_path}\n"
+        status += f"  Vertices: {len(trimesh.vertices)}\n"
+        status += f"  Faces: {len(trimesh.faces)}"
+
+        print(f"[SaveMesh] {status}")
+
+        return (status,)
+
+
+# Node mappings
+NODE_CLASS_MAPPINGS = {
+    "GeomPackSaveMesh": SaveMesh,
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "GeomPackSaveMesh": "Save Mesh",
+}
