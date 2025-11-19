@@ -117,9 +117,9 @@ class PreviewMeshVTKPointCloudNode:
 
 
 NODE_CLASS_MAPPINGS = {
-    "GeomPackPreviewMeshVTKPointCloud": PreviewMeshVTKPointCloudNode,
+    "GeomPackPreviewMeshVTKFields": PreviewMeshVTKPointCloudNode,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "GeomPackPreviewMeshVTKPointCloud": "Preview Mesh (VTK Point Cloud)",
+    "GeomPackPreviewMeshVTKFields": "Preview Mesh (VTK with Fields)",
 }

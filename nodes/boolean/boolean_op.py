@@ -15,8 +15,8 @@ class BooleanOpNode:
     - difference: Subtract mesh_b from mesh_a
     - intersection: Keep only overlapping parts
 
-    Uses trimesh's boolean operations (requires manifold3d backend).
-    Fallback to Blender if manifold3d is not available.
+    Uses libigl with CGAL backend for robust boolean operations.
+    Fallback to Blender if CGAL is not available.
     """
 
     @classmethod
@@ -28,7 +28,7 @@ class BooleanOpNode:
                 "operation": (["union", "difference", "intersection"],),
             },
             "optional": {
-                "engine": (["auto", "manifold", "blender"], {"default": "auto"}),
+                "engine": (["auto", "libigl_cgal", "blender"], {"default": "auto"}),
             }
         }
 
@@ -45,7 +45,7 @@ class BooleanOpNode:
             mesh_a: First mesh (base mesh for difference)
             mesh_b: Second mesh (subtracted mesh for difference)
             operation: Boolean operation type
-            engine: Backend to use
+            engine: Backend to use (auto, libigl_cgal, blender)
 
         Returns:
             tuple: (result_mesh, info_string)
@@ -54,13 +54,13 @@ class BooleanOpNode:
         print(f"[Boolean] Mesh B: {len(mesh_b.vertices)} vertices, {len(mesh_b.faces)} faces")
         print(f"[Boolean] Operation: {operation}, Engine: {engine}")
 
-        # Try manifold backend first
-        if engine in ["auto", "manifold"]:
-            result, info = self._try_manifold(mesh_a, mesh_b, operation)
+        # Try libigl+CGAL backend first
+        if engine in ["auto", "libigl_cgal"]:
+            result, info = self._try_libigl_cgal(mesh_a, mesh_b, operation)
             if result is not None:
                 return (result, info)
-            if engine == "manifold":
-                raise RuntimeError("Manifold backend failed and was explicitly requested")
+            if engine == "libigl_cgal":
+                raise RuntimeError("libigl+CGAL backend failed and was explicitly requested")
 
         # Fallback to Blender
         if engine in ["auto", "blender"]:
@@ -70,26 +70,40 @@ class BooleanOpNode:
 
         raise RuntimeError(f"Boolean operation failed with all available backends")
 
-    def _try_manifold(self, mesh_a, mesh_b, operation):
-        """Try boolean operation using manifold3d (via trimesh)."""
+    def _try_libigl_cgal(self, mesh_a, mesh_b, operation):
+        """Try boolean operation using libigl with CGAL backend."""
         try:
-            print(f"[Boolean] Attempting manifold backend...")
+            import igl.copyleft.cgal as cgal
+            print(f"[Boolean] Attempting libigl+CGAL backend...")
 
-            # trimesh uses manifold3d for boolean operations
-            if operation == "union":
-                result = mesh_a.union(mesh_b, engine="manifold")
-            elif operation == "difference":
-                result = mesh_a.difference(mesh_b, engine="manifold")
-            elif operation == "intersection":
-                result = mesh_a.intersection(mesh_b, engine="manifold")
-            else:
+            # Convert trimesh to numpy arrays
+            VA = np.asarray(mesh_a.vertices, dtype=np.float64)
+            FA = np.asarray(mesh_a.faces, dtype=np.int64)
+            VB = np.asarray(mesh_b.vertices, dtype=np.float64)
+            FB = np.asarray(mesh_b.faces, dtype=np.int64)
+
+            # Map operation to igl type_str
+            # mesh_boolean accepts string: "union", "intersection", "difference"
+            op_map = {
+                "union": "union",
+                "difference": "difference",
+                "intersection": "intersection"
+            }
+
+            if operation not in op_map:
                 raise ValueError(f"Unknown operation: {operation}")
+
+            # Perform boolean operation using CGAL
+            VC, FC, J = cgal.mesh_boolean(VA, FA, VB, FB, op_map[operation])
+
+            # Create result trimesh
+            result = trimesh_module.Trimesh(vertices=VC, faces=FC, process=False)
 
             # Preserve metadata from mesh_a
             result.metadata = mesh_a.metadata.copy()
             result.metadata['boolean'] = {
                 'operation': operation,
-                'engine': 'manifold',
+                'engine': 'libigl_cgal',
                 'mesh_a_vertices': len(mesh_a.vertices),
                 'mesh_a_faces': len(mesh_a.faces),
                 'mesh_b_vertices': len(mesh_b.vertices),
@@ -101,7 +115,7 @@ class BooleanOpNode:
             info = f"""Boolean Operation Results:
 
 Operation: {operation.upper()}
-Engine: manifold
+Engine: libigl + CGAL
 
 Mesh A:
   Vertices: {len(mesh_a.vertices):,}
@@ -118,11 +132,11 @@ Result:
 Watertight: {result.is_watertight}
 """
 
-            print(f"[Boolean] Manifold success: {len(result.vertices)} vertices, {len(result.faces)} faces")
+            print(f"[Boolean] libigl+CGAL success: {len(result.vertices)} vertices, {len(result.faces)} faces")
             return result, info
 
         except Exception as e:
-            print(f"[Boolean] Manifold backend failed: {e}")
+            print(f"[Boolean] libigl+CGAL backend failed: {e}")
             return None, str(e)
 
     def _try_blender(self, mesh_a, mesh_b, operation):

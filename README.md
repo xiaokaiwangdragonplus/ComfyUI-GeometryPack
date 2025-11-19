@@ -4,8 +4,9 @@
 
 Professional geometry processing nodes for ComfyUI. Load, analyze, remesh, unwrap, and visualize 3D meshes directly in your workflows.
 
-![Stanford Bunny](docs/stanford_bunny.png)
 ![Remeshing](docs/remeshing.png)
+![self_intersection_fix](docs/self_intersection_fix.png)
+![uv_unwrapping](docs/uv_unwrapping.png)
 
 ## Features
 

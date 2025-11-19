@@ -88,6 +88,7 @@ class BlenderRemeshWithTexture:
         return {
             "required": {
                 "trimesh": ("TRIMESH",),
+                "method": (["blender", "xatlas"], {"default": "blender"}),
                 "remesh_method": (["voxel", "quadriflow"], {"default": "quadriflow"}),
                 "voxel_size": ("FLOAT", {
                     "default": 0.05,
@@ -116,9 +117,16 @@ class BlenderRemeshWithTexture:
     FUNCTION = "remesh_with_texture"
     CATEGORY = "geompack/texture_remeshing"
 
-    def remesh_with_texture(self, trimesh, remesh_method, voxel_size, target_face_count,
+    def remesh_with_texture(self, trimesh, method, remesh_method, voxel_size, target_face_count,
                            texture_size, bake_margin):
         """Remesh a textured mesh while preserving texture through Blender baking."""
+        # Check if xatlas method is requested
+        if method == "xatlas":
+            raise NotImplementedError(
+                "XAtlas remeshing method is not yet implemented. "
+                "Please use 'blender' method or help contribute an implementation!"
+            )
+
         if not PIL_AVAILABLE:
             raise RuntimeError("PIL required. Install: pip install Pillow")
 
@@ -283,9 +291,11 @@ Texture size: {texture_size}x{texture_size}
 
 # Node mappings
 NODE_CLASS_MAPPINGS = {
-    "GeomPackRemeshUV": BlenderRemeshWithTexture,
+    "GeomPackBlenderRemeshWithTexture": BlenderRemeshWithTexture,
+    "GeomPackXAtlasRemeshWithTexture": BlenderRemeshWithTexture,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "GeomPackRemeshUV": "Remesh UV",
+    "GeomPackBlenderRemeshWithTexture": "Remesh with Texture",
+    "GeomPackXAtlasRemeshWithTexture": "Remesh with Texture",
 }
