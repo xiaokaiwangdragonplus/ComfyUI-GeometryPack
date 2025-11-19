@@ -10,6 +10,9 @@ class ReconstructSurfaceNode:
     """
     Reconstruct Surface - Convert point cloud to mesh.
 
+    Accepts TRIMESH objects (including point clouds from MeshToPointCloud node).
+    Point clouds are represented as TRIMESH with vertices only (0 faces).
+
     Multiple reconstruction algorithms:
     - poisson: Screened Poisson surface reconstruction (smooth, watertight)
     - ball_pivoting: Ball pivoting algorithm (preserves detail)
@@ -24,7 +27,7 @@ class ReconstructSurfaceNode:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "points": ("TRIMESH",),  # Point cloud as trimesh with 0 or more faces
+                "points": ("TRIMESH",),  # Accepts TRIMESH (including point clouds as TRIMESH)
                 "method": ([
                     "poisson",
                     "ball_pivoting",
@@ -85,27 +88,34 @@ class ReconstructSurfaceNode:
         Reconstruct surface from point cloud.
 
         Args:
-            points: Point cloud (trimesh with vertices)
+            points: Point cloud as TRIMESH (may have 0 faces for pure point clouds)
             method: Reconstruction algorithm
             [other params]: Method-specific parameters
 
         Returns:
             tuple: (reconstructed_mesh, info_string)
         """
-        # Extract vertices from input
-        if hasattr(points, 'vertices'):
-            vertices = points.vertices
-        else:
-            raise ValueError("Input must have vertices attribute")
+        # Extract vertices from TRIMESH
+        if not hasattr(points, 'vertices'):
+            raise ValueError("Input must be a TRIMESH object with vertices")
 
-        print(f"[Reconstruct] Input: {len(vertices)} points")
-        print(f"[Reconstruct] Method: {method}")
+        vertices = points.vertices
+        normals = None
 
         # Extract normals if available
-        normals = None
         if hasattr(points, 'vertex_normals') and len(points.vertex_normals) > 0:
             normals = points.vertex_normals
-            print(f"[Reconstruct] Using existing normals")
+            print(f"[Reconstruct] Using normals from input")
+
+        # Check if this is a point cloud (from MeshToPointCloud node)
+        is_point_cloud = False
+        if hasattr(points, 'metadata') and points.metadata.get('is_point_cloud', False):
+            is_point_cloud = True
+            print(f"[Reconstruct] Input type: Point cloud (TRIMESH with {len(vertices)} points, 0 faces)")
+        else:
+            print(f"[Reconstruct] Input type: TRIMESH ({len(vertices)} vertices, {len(points.faces)} faces)")
+
+        print(f"[Reconstruct] Method: {method}")
 
         if method == "poisson":
             result, info = self._poisson(vertices, normals, poisson_depth, poisson_scale,
@@ -128,8 +138,10 @@ class ReconstructSurfaceNode:
         else:
             result.metadata = {}
 
+        # Add reconstruction info
         result.metadata['reconstruction'] = {
             'method': method,
+            'was_point_cloud': is_point_cloud,
             'input_points': len(vertices),
             'output_vertices': len(result.vertices),
             'output_faces': len(result.faces)

@@ -36,7 +36,7 @@ class MeshToPointCloudNode:
             }
         }
 
-    RETURN_TYPES = ("POINT_CLOUD",)
+    RETURN_TYPES = ("TRIMESH",)  # Changed from POINT_CLOUD to TRIMESH for compatibility
     RETURN_NAMES = ("point_cloud",)
     FUNCTION = "mesh_to_pointcloud"
     CATEGORY = "geompack/conversion"
@@ -52,7 +52,7 @@ class MeshToPointCloudNode:
             include_normals: Whether to compute surface normals
 
         Returns:
-            tuple: (point_cloud_dict,)
+            tuple: (point_cloud_as_trimesh,) - TRIMESH with vertices only (no faces)
         """
         print(f"[MeshToPointCloud] Sampling {sample_count:,} points using {sampling_method} method")
 
@@ -83,20 +83,29 @@ class MeshToPointCloudNode:
             # Get face normals for each sampled point
             normals = trimesh.face_normals[face_indices]
 
-        # Create point cloud data structure
-        pointcloud = {
-            'points': points,
-            'normals': normals,
+        # Create point cloud as TRIMESH object (vertices only, no faces)
+        # This ensures compatibility with all TRIMESH-expecting nodes
+        import trimesh as trimesh_module
+        point_cloud = trimesh_module.PointCloud(vertices=points)
+
+        # Add normals as vertex_normals if computed
+        if normals is not None:
+            point_cloud.vertex_normals = normals
+
+        # Store point cloud metadata
+        point_cloud.metadata = {
+            'is_point_cloud': True,
             'face_indices': face_indices,
             'source_mesh_vertices': len(trimesh.vertices),
             'source_mesh_faces': len(trimesh.faces),
             'sample_count': len(points),
             'sampling_method': sampling_method,
+            'has_normals': normals is not None
         }
 
-        print(f"[MeshToPointCloud] Generated point cloud with {len(points):,} points")
+        print(f"[MeshToPointCloud] Generated point cloud as TRIMESH with {len(points):,} points")
 
-        return (pointcloud,)
+        return (point_cloud,)
 
 
 # Node mappings

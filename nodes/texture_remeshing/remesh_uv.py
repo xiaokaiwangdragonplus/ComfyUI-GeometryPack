@@ -196,6 +196,8 @@ class BlenderRemeshWithTexture:
             # Export source mesh as GLB (GLB format automatically includes textures)
             trimesh.export(source_glb.name)
             source_glb.close()
+            output_glb.close()  # Close so Blender can write to it
+            baked_texture.close()  # Close so Blender can write to it
 
             # Calculate appropriate voxel size based on mesh bounds
             bounds = trimesh.bounds
@@ -212,34 +214,34 @@ class BlenderRemeshWithTexture:
             print(f"[BlenderRemeshWithTexture] Original voxel_size: {voxel_size}, Adjusted: {adjusted_voxel_size:.5f}")
             print(f"[BlenderRemeshWithTexture] Fallback voxel size (targeting ~{target_face_count} faces): {fallback_voxel_size:.5f}")
 
-            # Build Blender script
+            # Build Blender script (remeshing will be applied to remeshed_obj)
             if remesh_method == "voxel":
                 remesh_code = f"""
-obj.data.remesh_voxel_size = {adjusted_voxel_size}
-original_face_count = len(obj.data.polygons)
+remeshed_obj.data.remesh_voxel_size = {adjusted_voxel_size}
+original_face_count = len(remeshed_obj.data.polygons)
 print(f"[Blender] Using voxel size: {adjusted_voxel_size}")
 bpy.ops.object.voxel_remesh()
-new_face_count = len(obj.data.polygons)
+new_face_count = len(remeshed_obj.data.polygons)
 print(f"[Blender] Voxel remesh: {{original_face_count}} -> {{new_face_count}} faces")
 """
             else:
                 remesh_code = f"""
-original_face_count = len(obj.data.polygons)
+original_face_count = len(remeshed_obj.data.polygons)
 print(f"[Blender] Starting quadriflow remesh with target_faces={target_face_count}")
 
 # Try quadriflow, fall back to voxel if it fails
 try:
     result = bpy.ops.object.quadriflow_remesh(target_faces={target_face_count})
     print(f"[Blender] Quadriflow result: {{result}}")
-    new_face_count = len(obj.data.polygons)
+    new_face_count = len(remeshed_obj.data.polygons)
 
     # If face count unchanged, quadriflow silently failed - use voxel fallback
     if new_face_count == original_face_count:
         print("[Blender] WARNING: Quadriflow produced no change - falling back to voxel remesh")
         print(f"[Blender] Using fallback voxel size (targeting ~{target_face_count} faces): {fallback_voxel_size}")
-        obj.data.remesh_voxel_size = {fallback_voxel_size}
+        remeshed_obj.data.remesh_voxel_size = {fallback_voxel_size}
         bpy.ops.object.voxel_remesh()
-        new_face_count = len(obj.data.polygons)
+        new_face_count = len(remeshed_obj.data.polygons)
         print(f"[Blender] Voxel remesh (fallback): {{original_face_count}} -> {{new_face_count}} faces")
     else:
         print(f"[Blender] Quadriflow remesh: {{original_face_count}} -> {{new_face_count}} faces")
@@ -248,9 +250,9 @@ except Exception as e:
     print(f"[Blender] ERROR: Quadriflow failed: {{e}}")
     print("[Blender] Falling back to voxel remesh")
     print(f"[Blender] Using fallback voxel size (targeting ~{target_face_count} faces): {fallback_voxel_size}")
-    obj.data.remesh_voxel_size = {fallback_voxel_size}
+    remeshed_obj.data.remesh_voxel_size = {fallback_voxel_size}
     bpy.ops.object.voxel_remesh()
-    new_face_count = len(obj.data.polygons)
+    new_face_count = len(remeshed_obj.data.polygons)
     print(f"[Blender] Voxel remesh (fallback): {{original_face_count}} -> {{new_face_count}} faces")
 """
 
@@ -266,16 +268,26 @@ objs = bpy.context.selected_objects
 
 print(f"[Blender] Imported {{len(objs)}} objects")
 for i, o in enumerate(objs):
-    print(f"  Object {{i}}: {{o.name}}, {{len(o.data.vertices)}} verts, {{len(o.data.polygons)}} faces, {{len(o.data.materials)}} materials")
+    if o.type == 'MESH':
+        print(f"  Object {{i}}: {{o.name}}, {{len(o.data.vertices)}} verts, {{len(o.data.polygons)}} faces, {{len(o.data.materials)}} materials")
+    else:
+        print(f"  Object {{i}}: {{o.name}} (type: {{o.type}}, skipping non-mesh)")
 
-# If multiple objects, join them
-if len(objs) > 1:
-    print(f"[Blender] Joining {{len(objs)}} objects...")
-    # Select all objects
+# Filter to only mesh objects
+mesh_objs = [o for o in objs if o.type == 'MESH']
+print(f"[Blender] Found {{len(mesh_objs)}} mesh objects out of {{len(objs)}} total objects")
+
+if len(mesh_objs) == 0:
+    raise RuntimeError("No mesh objects found in imported GLB file")
+
+# If multiple mesh objects, join them
+if len(mesh_objs) > 1:
+    print(f"[Blender] Joining {{len(mesh_objs)}} mesh objects...")
+    # Select all mesh objects
     bpy.ops.object.select_all(action='DESELECT')
-    for o in objs:
+    for o in mesh_objs:
         o.select_set(True)
-    bpy.context.view_layer.objects.active = objs[0]
+    bpy.context.view_layer.objects.active = mesh_objs[0]
 
     try:
         bpy.ops.object.join()
@@ -283,51 +295,62 @@ if len(objs) > 1:
         print(f"[Blender] Join successful: {{len(obj.data.vertices)}} verts, {{len(obj.data.polygons)}} faces")
     except Exception as e:
         print(f"[Blender] ERROR joining objects: {{e}}")
-        # If join fails, just use the first object
-        print(f"[Blender] WARNING: Using first object only")
-        obj = objs[0]
-elif len(objs) == 1:
-    obj = objs[0]
-else:
-    raise RuntimeError("No objects imported from GLB")
+        # If join fails, just use the first mesh object
+        print(f"[Blender] WARNING: Using first mesh object only")
+        obj = mesh_objs[0]
+elif len(mesh_objs) == 1:
+    obj = mesh_objs[0]
 
-obj.name = 'Mesh'
-print(f"[Blender] Final mesh: {{len(obj.data.vertices)}} verts, {{len(obj.data.polygons)}} faces")
+obj.name = 'OriginalMesh'
 
-# Save ORIGINAL UV layer
-if obj.data.uv_layers.active:
-    old_uv = obj.data.uv_layers.active
-    old_uv.name = "OriginalUV"
-    print(f"[Blender] Saved original UV layer as 'OriginalUV'")
-else:
-    print("[Blender] WARNING: No original UV layer found!")
+# Validate that we have a valid mesh object
+if obj.type != 'MESH':
+    raise RuntimeError(f"Final object is not a mesh (type: {{obj.type}})")
+if not hasattr(obj.data, 'vertices') or not hasattr(obj.data, 'polygons'):
+    raise RuntimeError("Final object does not have valid mesh data")
 
-# REMESH the geometry
+print(f"[Blender] Original mesh: {{len(obj.data.vertices)}} verts, {{len(obj.data.polygons)}} faces")
+
+# Verify original mesh has UVs
+if not obj.data.uv_layers.active:
+    raise RuntimeError("Original mesh has no UV layer!")
+print(f"[Blender] Original UV layer: {{obj.data.uv_layers.active.name}}")
+
+# DUPLICATE the mesh - one for source (original UVs), one for target (remeshed)
+bpy.ops.object.select_all(action='DESELECT')
+obj.select_set(True)
 bpy.context.view_layer.objects.active = obj
+bpy.ops.object.duplicate()
+remeshed_obj = bpy.context.active_object
+remeshed_obj.name = 'RemeshedMesh'
+print(f"[Blender] Created duplicate for remeshing")
+
+# REMESH the duplicate (keeps original intact)
+bpy.context.view_layer.objects.active = remeshed_obj
 {remesh_code}
 
 # Create NEW UV layer for remeshed geometry
-new_uv = obj.data.uv_layers.new(name="RemeshedUV")
-obj.data.uv_layers.active = new_uv
+new_uv = remeshed_obj.data.uv_layers.new(name="RemeshedUV")
+remeshed_obj.data.uv_layers.active = new_uv
 
 # Generate NEW UVs (high quality settings for better texture coverage)
 bpy.ops.object.mode_set(mode='EDIT')
 bpy.ops.mesh.select_all(action='SELECT')
 bpy.ops.uv.smart_project(angle_limit=89.0, island_margin=0.001)
 bpy.ops.object.mode_set(mode='OBJECT')
-print(f"[Blender] Generated new UV layer 'RemeshedUV' (high quality), total layers: {{len(obj.data.uv_layers)}}")
+print(f"[Blender] Generated new UV layer 'RemeshedUV' on remeshed object")
 
-# Set up material with ORIGINAL UV layer mapped to source texture
+# Set up material on ORIGINAL mesh (SOURCE for baking)
 if len(obj.data.materials) > 0:
-    mat = obj.data.materials[0]
+    source_mat = obj.data.materials[0]
 else:
-    mat = bpy.data.materials.new('Material')
-    obj.data.materials.append(mat)
+    source_mat = bpy.data.materials.new('SourceMaterial')
+    obj.data.materials.append(source_mat)
 
 # Find the texture image that was imported with GLB
 source_texture = None
-if mat.use_nodes:
-    for node in mat.node_tree.nodes:
+if source_mat.use_nodes:
+    for node in source_mat.node_tree.nodes:
         if node.type == 'TEX_IMAGE' and node.image:
             source_texture = node.image
             print(f"[Blender] Found texture in material: {{source_texture.size[0]}}x{{source_texture.size[1]}}")
@@ -339,49 +362,57 @@ if source_texture is None:
     source_texture = bpy.data.images.load('{texture_path}')
     print(f"[Blender] Loaded texture: {{source_texture.size[0]}}x{{source_texture.size[1]}}")
 
-# Rebuild material node tree
-mat.use_nodes = True
-nodes = mat.node_tree.nodes
-nodes.clear()
+# Keep the original material setup simple for baking
+source_mat.use_nodes = True
+source_nodes = source_mat.node_tree.nodes
+source_nodes.clear()
+source_tex = source_nodes.new('ShaderNodeTexImage')
+source_tex.image = source_texture
+source_bsdf = source_nodes.new('ShaderNodeBsdfDiffuse')
+source_output = source_nodes.new('ShaderNodeOutputMaterial')
+source_mat.node_tree.links.new(source_tex.outputs['Color'], source_bsdf.inputs['Color'])
+source_mat.node_tree.links.new(source_bsdf.outputs['BSDF'], source_output.inputs['Surface'])
+print(f"[Blender] Source material setup (original mesh with original UVs)")
 
-# Use UV Map node to specify ORIGINAL UV layer
-uv_map = nodes.new('ShaderNodeUVMap')
-uv_map.uv_map = "OriginalUV"
+# Set up material on REMESHED mesh (TARGET for baking)
+target_mat = bpy.data.materials.new('TargetMaterial')
+remeshed_obj.data.materials.clear()
+remeshed_obj.data.materials.append(target_mat)
+target_mat.use_nodes = True
+target_nodes = target_mat.node_tree.nodes
+target_nodes.clear()
 
-# Create texture node with source texture
-tex_image = nodes.new('ShaderNodeTexImage')
-tex_image.image = source_texture
-
-# Connect: OriginalUV → Texture → BSDF → Output
-bsdf = nodes.new('ShaderNodeBsdfDiffuse')
-output = nodes.new('ShaderNodeOutputMaterial')
-mat.node_tree.links.new(uv_map.outputs['UV'], tex_image.inputs['Vector'])
-mat.node_tree.links.new(tex_image.outputs['Color'], bsdf.inputs['Color'])
-mat.node_tree.links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
-print(f"[Blender] Material setup: OriginalUV → Texture → BSDF")
-
-# Create bake target image (will use RemeshedUV automatically as active)
+# Create bake target image
 bake_image = bpy.data.images.new('BakedTexture', {actual_texture_size}, {actual_texture_size})
 print(f"[Blender] Created bake target image: {actual_texture_size}x{actual_texture_size}")
-bake_node = nodes.new('ShaderNodeTexImage')
+
+# Add bake target node to remeshed object's material
+bake_node = target_nodes.new('ShaderNodeTexImage')
 bake_node.image = bake_image
 bake_node.select = True
-nodes.active = bake_node
+target_nodes.active = bake_node
+print(f"[Blender] Target material setup (remeshed mesh with new UVs)")
 
-# Bake settings (single object, no selected-to-active needed!)
+# Bake settings for selected-to-active
 bpy.context.scene.render.engine = 'CYCLES'
 bpy.context.scene.cycles.device = 'CPU'
-# Reduce samples for complex meshes to avoid memory issues
-# (can be increased later if needed)
 bpy.context.scene.cycles.samples = 64
-bpy.context.scene.render.bake.use_selected_to_active = False
+bpy.context.scene.render.bake.use_selected_to_active = True
+bpy.context.scene.render.bake.cage_extrusion = 0.1
+bpy.context.scene.render.bake.max_ray_distance = 0.0
 bpy.context.scene.render.bake.margin = {bake_margin}
 bpy.context.scene.render.bake.use_pass_direct = False
 bpy.context.scene.render.bake.use_pass_indirect = False
 bpy.context.scene.render.bake.use_pass_color = True
 
-print(f"[Blender] Baking DIFFUSE (OriginalUV → RemeshedUV, 64 samples, {{bake_margin}}px margin)...")
-print(f"[Blender] Memory before bake: {{bpy.app.driver_namespace.get('memory_stats', 'unknown')}}")
+# Select objects for baking: source selected, target active
+bpy.ops.object.select_all(action='DESELECT')
+obj.select_set(True)  # Source (selected)
+remeshed_obj.select_set(True)  # Target (also selected)
+bpy.context.view_layer.objects.active = remeshed_obj  # Target must be active
+
+print(f"[Blender] Baking DIFFUSE (selected-to-active, 64 samples, {bake_margin}px margin)...")
+print(f"[Blender] Source: {{obj.name}} ({{len(obj.data.vertices)}} verts), Target: {{remeshed_obj.name}} ({{len(remeshed_obj.data.vertices)}} verts)")
 
 try:
     result = bpy.ops.object.bake(type='DIFFUSE')
@@ -403,22 +434,22 @@ bake_image.file_format = 'PNG'
 bake_image.save()
 print(f"[Blender] Saved baked texture")
 
-# Reconnect baked texture to material for export
-nodes.clear()
-bake_tex_node = nodes.new('ShaderNodeTexImage')
+# Reconnect baked texture to remeshed object's material for export
+target_nodes.clear()
+bake_tex_node = target_nodes.new('ShaderNodeTexImage')
 bake_tex_node.image = bake_image
-bsdf_node = nodes.new('ShaderNodeBsdfPrincipled')
-output_node = nodes.new('ShaderNodeOutputMaterial')
-mat.node_tree.links.new(bake_tex_node.outputs['Color'], bsdf_node.inputs['Base Color'])
-mat.node_tree.links.new(bsdf_node.outputs['BSDF'], output_node.inputs['Surface'])
-print(f"[Blender] Reconnected baked texture to material for export")
+bsdf_node = target_nodes.new('ShaderNodeBsdfPrincipled')
+output_node = target_nodes.new('ShaderNodeOutputMaterial')
+target_mat.node_tree.links.new(bake_tex_node.outputs['Color'], bsdf_node.inputs['Base Color'])
+target_mat.node_tree.links.new(bsdf_node.outputs['BSDF'], output_node.inputs['Surface'])
+print(f"[Blender] Reconnected baked texture to remeshed object material for export")
 
-# Export
+# Export ONLY the remeshed object (not the original)
 bpy.ops.object.select_all(action='DESELECT')
-obj.select_set(True)
-bpy.context.view_layer.objects.active = obj
+remeshed_obj.select_set(True)
+bpy.context.view_layer.objects.active = remeshed_obj
 
-print(f"[Blender] Exporting: {{len(obj.data.vertices)}} vertices, {{len(obj.data.polygons)}} faces")
+print(f"[Blender] Exporting remeshed object: {{len(remeshed_obj.data.vertices)}} vertices, {{len(remeshed_obj.data.polygons)}} faces")
 bpy.ops.export_scene.gltf(
     filepath='{output_glb.name}',
     use_selection=True,
@@ -430,6 +461,11 @@ print(f"[Blender] Export complete")
 """
 
             print(f"[BlenderRemeshWithTexture] Running Blender...")
+            # DEBUG: Save script for inspection
+            with open('/tmp/blender_remesh_script.py', 'w') as f:
+                f.write(script)
+            print(f"[BlenderRemeshWithTexture] Script saved to /tmp/blender_remesh_script.py")
+
             result = subprocess.run(
                 [blender_path, '--background', '--python-expr', script],
                 capture_output=True,
