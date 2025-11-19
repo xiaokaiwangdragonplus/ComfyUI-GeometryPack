@@ -3,6 +3,7 @@ Load Mesh Node - Load a mesh from file (OBJ, PLY, STL, OFF, etc.)
 """
 
 import os
+import numpy as np
 
 # ComfyUI folder paths
 try:
@@ -13,6 +14,18 @@ except:
     COMFYUI_INPUT_FOLDER = None
 
 from .._utils import mesh_ops
+
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
 
 class LoadMesh:
@@ -39,8 +52,8 @@ class LoadMesh:
             },
         }
 
-    RETURN_TYPES = ("TRIMESH",)
-    RETURN_NAMES = ("mesh",)
+    RETURN_TYPES = ("TRIMESH", "IMAGE")
+    RETURN_NAMES = ("mesh", "texture")
     FUNCTION = "load_mesh"
     CATEGORY = "geompack/io"
 
@@ -85,6 +98,46 @@ class LoadMesh:
 
         return file_path
 
+    def _extract_texture_image(self, mesh):
+        """Extract texture from mesh and convert to ComfyUI IMAGE format."""
+        if not PIL_AVAILABLE or not TORCH_AVAILABLE:
+            return None
+
+        texture_image = None
+
+        # Check if mesh has texture
+        if hasattr(mesh, 'visual') and hasattr(mesh.visual, 'material'):
+            material = mesh.visual.material
+            if material is not None:
+                # Check for PBR baseColorTexture (GLB/GLTF files)
+                if hasattr(material, 'baseColorTexture') and material.baseColorTexture is not None:
+                    img = material.baseColorTexture
+                    if isinstance(img, Image.Image):
+                        texture_image = img
+                        print(f"[LoadMesh] Found texture in material.baseColorTexture: {texture_image.size}")
+                    elif isinstance(img, str) and os.path.exists(img):
+                        texture_image = Image.open(img)
+                        print(f"[LoadMesh] Loaded texture from material.baseColorTexture path: {texture_image.size}")
+
+                # Check for standard material.image (OBJ/MTL files)
+                if texture_image is None and hasattr(material, 'image') and material.image is not None:
+                    img = material.image
+                    if isinstance(img, Image.Image):
+                        texture_image = img
+                        print(f"[LoadMesh] Found texture in material.image: {texture_image.size}")
+                    elif isinstance(img, str) and os.path.exists(img):
+                        texture_image = Image.open(img)
+                        print(f"[LoadMesh] Loaded texture from material.image path: {texture_image.size}")
+
+        if texture_image is None:
+            print("[LoadMesh] No texture found in mesh")
+            # Return black 64x64 placeholder
+            texture_image = Image.new('RGB', (64, 64), color=(0, 0, 0))
+
+        # Convert to ComfyUI IMAGE format (BHWC with values 0-1)
+        img_array = np.array(texture_image.convert("RGB")).astype(np.float32) / 255.0
+        return torch.from_numpy(img_array)[None,]
+
     def load_mesh(self, file_path):
         """
         Load mesh from file.
@@ -95,7 +148,7 @@ class LoadMesh:
             file_path: Path to mesh file (relative to input folder or absolute)
 
         Returns:
-            tuple: (trimesh.Trimesh,)
+            tuple: (trimesh.Trimesh, IMAGE)
         """
         if not file_path or file_path.strip() == "":
             raise ValueError("File path cannot be empty")
@@ -141,7 +194,10 @@ class LoadMesh:
 
         print(f"[LoadMesh] Loaded: {len(loaded_mesh.vertices)} vertices, {len(loaded_mesh.faces)} faces")
 
-        return (loaded_mesh,)
+        # Extract texture
+        texture = self._extract_texture_image(loaded_mesh)
+
+        return (loaded_mesh, texture)
 
 
 # Node mappings
