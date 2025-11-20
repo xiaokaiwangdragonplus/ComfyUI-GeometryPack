@@ -65,6 +65,25 @@ class PreviewMeshVTKWithTextureNode:
                 has_texture = hasattr(trimesh.visual, 'material') and trimesh.visual.material is not None
                 has_material = has_texture
                 print(f"[PreviewMeshVTKWithTexture] Mesh has texture visual with material: {has_material}")
+
+                # Debug: Log detailed texture/material info
+                if has_material:
+                    material = trimesh.visual.material
+                    print(f"[PreviewMeshVTKWithTexture] Material type: {type(material).__name__}")
+                    print(f"[PreviewMeshVTKWithTexture] Material attributes: {dir(material)}")
+
+                    # Check for PBR material properties
+                    if hasattr(material, 'baseColorTexture') and material.baseColorTexture is not None:
+                        print(f"[PreviewMeshVTKWithTexture] Has baseColorTexture: {type(material.baseColorTexture)}")
+                        if hasattr(material.baseColorTexture, 'size'):
+                            print(f"[PreviewMeshVTKWithTexture] Texture size: {material.baseColorTexture.size}")
+
+                    # Check for UV coordinates
+                    if hasattr(trimesh.visual, 'uv') and trimesh.visual.uv is not None:
+                        print(f"[PreviewMeshVTKWithTexture] Has UV coordinates: {trimesh.visual.uv.shape}")
+                    else:
+                        print(f"[PreviewMeshVTKWithTexture] WARNING: No UV coordinates found!")
+
             elif visual_kind == 'vertex':
                 has_vertex_colors = True
                 print(f"[PreviewMeshVTKWithTexture] Mesh has vertex colors")
@@ -84,6 +103,33 @@ class PreviewMeshVTKWithTextureNode:
         try:
             trimesh.export(filepath, file_type='glb', include_normals=True)
             print(f"[PreviewMeshVTKWithTexture] Exported GLB to: {filepath}")
+
+            # Verify the exported GLB contains texture data
+            import struct
+            import json
+            try:
+                with open(filepath, 'rb') as f:
+                    # Read GLB header
+                    magic = f.read(4)
+                    if magic == b'glTF':
+                        version = struct.unpack('<I', f.read(4))[0]
+                        length = struct.unpack('<I', f.read(4))[0]
+                        print(f"[PreviewMeshVTKWithTexture] GLB version {version}, total size {length} bytes")
+
+                        # Read JSON chunk
+                        json_length = struct.unpack('<I', f.read(4))[0]
+                        json_type = struct.unpack('<I', f.read(4))[0]
+                        if json_type == 0x4E4F534A:  # 'JSON'
+                            json_data = f.read(json_length).decode('utf-8')
+                            gltf = json.loads(json_data)
+                            print(f"[PreviewMeshVTKWithTexture] GLTF contains: {gltf.get('images', []).__len__()} images, {gltf.get('textures', []).__len__()} textures, {gltf.get('materials', []).__len__()} materials")
+                            if gltf.get('images'):
+                                print(f"[PreviewMeshVTKWithTexture] First image: {gltf['images'][0]}")
+                            if not gltf.get('images'):
+                                print(f"[PreviewMeshVTKWithTexture] WARNING: Exported GLB has NO texture images!")
+            except Exception as verify_error:
+                print(f"[PreviewMeshVTKWithTexture] Could not verify GLB contents: {verify_error}")
+
         except Exception as e:
             print(f"[PreviewMeshVTKWithTexture] GLB export failed: {e}")
             import traceback

@@ -272,9 +272,7 @@
         const vtkOBJReader = vtk.IO.Misc.vtkOBJReader;
         const vtkPolyDataNormals = vtk.Filters.Core.vtkPolyDataNormals;
 
-        console.log('[GeomPack VTK Textured Viewer] Initializing...');
-        console.log('[GeomPack VTK Textured Viewer] GLTF support:', gltfSupported);
-        console.log('[GeomPack VTK Textured Viewer] vtkGLTFImporter:', vtkGLTFImporter);
+        console.log('[GeomPack VTK Textured Viewer] Initializing (GLTF support:', gltfSupported, ')');
 
         // Helper function to convert RGB values (0-1 range) to RGB string
         function createRGBStringFromRGBValues(r, g, b) {
@@ -300,6 +298,10 @@
         const renderer = fullScreenRenderer.getRenderer();
         const renderWindow = fullScreenRenderer.getRenderWindow();
         const interactor = renderWindow.getInteractor();
+
+        // Ensure proper lighting for texture visibility
+        renderer.setTwoSidedLighting(true);
+        renderer.setUseShadows(false);
 
         // Set up trackball camera controls
         const interactorStyle = vtkInteractorStyleTrackballCamera.newInstance();
@@ -337,17 +339,14 @@
             actor: axes,
             interactor: renderWindow.getInteractor(),
         });
-        orientationWidget.setEnabled(false);
+        orientationWidget.setEnabled(true);
         orientationWidget.setViewportCorner(vtkOrientationMarkerWidget.Corners.BOTTOM_LEFT);
         orientationWidget.setViewportSize(0.15);
         orientationWidget.setMinPixelSize(100);
         orientationWidget.setMaxPixelSize(300);
 
-        console.log('[GeomPack VTK Textured Viewer] Renderer initialized');
-
         // Load GLTF/GLB mesh
         async function loadGLTFMesh(filepath) {
-            console.log('[GeomPack VTK Textured] Loading GLTF/GLB:', filepath);
             loading.textContent = 'Loading textured mesh...';
             loading.style.display = 'block';
 
@@ -360,35 +359,158 @@
                     throw new Error('GLTFImporter not available in this VTK.js version');
                 }
 
+                // Clear previous actors FIRST
+                currentActors.forEach(actor => renderer.removeActor(actor));
+                currentActors = [];
+
                 const importer = vtkGLTFImporter.newInstance();
+
+                // Set the renderer FIRST - importActors() needs this to add actors
+                importer.setRenderer(renderer);
 
                 // Set the URL
                 importer.setUrl(filepath);
 
-                // Load the data
-                await importer.loadData();
+                // Wait for GLTF parsing to complete using onReady callback
+                await new Promise((resolve, reject) => {
+                    importer.onReady(() => {
+                        console.log('[GeomPack VTK Textured] GLTF parsing completed');
+                        resolve();
+                    });
 
-                console.log('[GeomPack VTK Textured] GLTF loaded successfully');
+                    // Start loading (this triggers parsing)
+                    importer.loadData().catch(reject);
+                });
 
-                // Clear previous actors
-                currentActors.forEach(actor => renderer.removeActor(actor));
-                currentActors = [];
+                console.log('[GeomPack VTK Textured] GLTF data loaded successfully');
 
-                // Get all actors from the scene
-                const actors = importer.getActors();
-                console.log('[GeomPack VTK Textured] Number of actors:', actors.length);
+                // Debug: Check internal GLTF model state
+                const state = importer.getState();
+                if (state.glTFTree?.json) {
+                    const json = state.glTFTree.json;
+                    console.log('[GeomPack VTK Textured] GLTF contains:', json.images?.length || 0, 'images,', json.textures?.length || 0, 'textures,', json.materials?.length || 0, 'materials');
+                }
 
-                // Add each actor to the renderer
+                // Now import actors (creates VTK actors and adds them to renderer)
+                importer.importActors();
+
+                // Get actors from the importer (returns Map<string, vtkActor>)
+                const actorsMap = importer.getActors();
+                const actors = Array.from(actorsMap.values());
+                console.log('[GeomPack VTK Textured] Number of actors from importer:', actors.length);
+
+                // Log actor details and store for cleanup
                 actors.forEach((actor, index) => {
-                    console.log(`[GeomPack VTK Textured] Adding actor ${index}`);
-                    renderer.addActor(actor);
                     currentActors.push(actor);
+                    console.log(`[GeomPack VTK Textured] Processing actor ${index}:`, actor.constructor.name);
 
-                    // Log material/texture info
                     const mapper = actor.getMapper();
                     const property = actor.getProperty();
-                    console.log(`[GeomPack VTK Textured] Actor ${index} property:`, property);
+                    console.log(`[GeomPack VTK Textured] Actor ${index} - mapper:`, !!mapper, 'property:', !!property);
+
+                    const input = mapper?.getInputData();
+                    console.log(`[GeomPack VTK Textured] Actor ${index} - input data:`, !!input);
+
+                    if (input) {
+                        const points = input.getNumberOfPoints();
+                        const cells = input.getNumberOfCells();
+                        const hasTCoords = input.getPointData().getTCoords() !== null;
+                        console.log(`[GeomPack VTK Textured] Actor ${index} - points: ${points}, cells: ${cells}, UVs: ${hasTCoords}`);
+
+                        // Only process actors with geometry
+                        if (points > 0) {
+                            // Check property for texture-related settings
+                            if (property) {
+                                const color = property.getColor();
+                                console.log(`[GeomPack VTK Textured] Actor ${index} base color:`, color);
+
+                                // Check for diffuse texture on property (this is where GLTFImporter sets it)
+                                const diffuseTexture = property.getDiffuseTexture();
+                                console.log(`[GeomPack VTK Textured] Actor ${index} has diffuseTexture:`, !!diffuseTexture);
+
+                                // EXPERIMENT: Also add texture directly to actor (vtk.js examples show this pattern)
+                                if (diffuseTexture) {
+                                    console.log(`[GeomPack VTK Textured] Actor ${index} - Also adding texture to actor via addTexture()`);
+                                    actor.addTexture(diffuseTexture);
+                                }
+
+                                // Check PBR properties BEFORE changing them
+                                const metallicBefore = property.getMetallic();
+                                const roughnessBefore = property.getRoughness();
+                                console.log(`[GeomPack VTK Textured] Actor ${index} BEFORE - metallic: ${metallicBefore}, roughness: ${roughnessBefore}`);
+
+                                // Check current interpolation mode
+                                const currentInterpolation = property.getInterpolation();
+                                console.log(`[GeomPack VTK Textured] Actor ${index} current interpolation mode: ${currentInterpolation} (0=Flat, 1=Gouraud, 2=Phong, 3=PBR)`);
+
+                                // Try Phong mode (2) - PBR mode might need environment maps
+                                property.setInterpolation(2); // 2 = Phong mode
+
+                                // AGGRESSIVE FIX: The RM texture keeps overriding roughness
+                                // Remove it and verify it's gone
+                                if (property.getRMTexture?.()) {
+                                    console.log(`[GeomPack VTK Textured] Actor ${index} - Has RM texture, removing it`);
+                                    property.setRMTexture(null);
+                                }
+
+                                // Set material properties
+                                property.setMetallic(0.0);
+                                property.setRoughness(1.0);
+
+                                // Lighting coefficients
+                                property.setAmbient(0.2);
+                                property.setDiffuse(0.9);
+                                property.setSpecular(0.1);
+                                property.setSpecularPower(10.0);
+
+                                // FORCE roughness again after all other settings
+                                property.setRoughness(1.0);
+
+                                // Force property to recognize all changes
+                                property.modified();
+
+                                // Verify RM texture is really gone and roughness is set
+                                console.log(`[GeomPack VTK Textured] Actor ${index} AFTER - metallic=${property.getMetallic()}, roughness=${property.getRoughness()}, interpolation=${property.getInterpolation()}, rmTexture=${!!property.getRMTexture?.()}, called modified()`);
+                            }
+
+                            // Configure mapper for texture rendering
+                            if (mapper) {
+                                const interpolateBefore = mapper.getInterpolateScalarsBeforeMapping?.() ?? 'N/A';
+                                console.log(`[GeomPack VTK Textured] Actor ${index} mapper BEFORE - colorMode: ${mapper.getColorMode()}, scalarVisibility: ${mapper.getScalarVisibility()}, interpolateScalars: ${interpolateBefore}`);
+
+                                // CRITICAL: Disable scalar visibility to use textures instead of vertex colors
+                                mapper.setScalarVisibility(false);
+
+                                // CRITICAL: Set colorMode to 0 (DEFAULT) instead of 2 (DIRECT_SCALARS)
+                                // DIRECT_SCALARS mode (set by GLTFImporter) overrides textures with scalar data
+                                mapper.setColorMode(0);
+
+                                // GLTFImporter also sets setInterpolateScalarsBeforeMapping(true)
+                                // This might interfere with texture rendering, try disabling it
+                                if (mapper.setInterpolateScalarsBeforeMapping) {
+                                    mapper.setInterpolateScalarsBeforeMapping(false);
+                                }
+
+                                // CRITICAL: Force mapper to rebuild shaders with new colorMode setting
+                                // The GLTFImporter sets DIRECT_SCALARS mode during creation, which compiles
+                                // shaders that ignore textures. We must trigger shader recompilation.
+                                mapper.modified();
+
+                                const interpolateAfter = mapper.getInterpolateScalarsBeforeMapping?.() ?? 'N/A';
+                                console.log(`[GeomPack VTK Textured] Actor ${index} mapper AFTER - colorMode: ${mapper.getColorMode()}, scalarVisibility: ${mapper.getScalarVisibility()}, interpolateScalars: ${interpolateAfter}, called modified()`);
+                            }
+
+                            // Check if texture was supposed to be applied
+                            if (hasTCoords && property && !property.getDiffuseTexture()) {
+                                console.warn(`[GeomPack VTK Textured] ⚠ Actor ${index} has UVs but no diffuse texture applied!`);
+                            }
+                        }
+                    }
                 });
+
+                // Force renderer update after changing material properties
+                console.log('[GeomPack VTK Textured] Forcing render update after material changes');
+                renderWindow.render();
 
                 // Get scene bounds
                 if (actors.length > 0) {
@@ -404,15 +526,20 @@
                         minBounds[5] = Math.max(minBounds[5], bounds[5]);
                     });
                     meshBounds = minBounds;
-                    console.log('[GeomPack VTK Textured] Scene bounds:', meshBounds);
                 }
 
                 // Reset camera to fit scene
                 renderer.resetCamera();
                 renderWindow.render();
 
+                // Force a second render after a brief delay
+                setTimeout(() => {
+                    renderer.resetCamera();
+                    renderWindow.render();
+                }, 100);
+
                 loading.style.display = 'none';
-                console.log('[GeomPack VTK Textured] GLTF scene loaded with', actors.length, 'actors');
+                console.log(`[GeomPack VTK Textured] ✓ Scene loaded with ${actors.length} actor(s)`);
 
                 return true;
             } catch (error) {
@@ -484,8 +611,7 @@
 
         // Main load function
         async function loadMesh(filepath, metadata = {}) {
-            console.log('[GeomPack VTK Textured] loadMesh called with:', filepath);
-            console.log('[GeomPack VTK Textured] Metadata:', metadata);
+            console.log('[GeomPack VTK Textured] Loading:', filepath.split('filename=')[1]?.split('&')[0] || filepath);
 
             // Update info panel
             if (metadata.visual_kind) {
@@ -658,15 +784,13 @@
         window.loadMesh = loadMesh;
         window.gltfSupported = gltfSupported;
 
+        console.log('[GeomPack VTK Textured Viewer] ✓ Ready');
+
         // Listen for postMessage from parent widget
         window.addEventListener('message', async (event) => {
-            console.log('[GeomPack VTK Textured] Received message:', event.data);
-
             if (event.data.type === 'LOAD_MESH' && event.data.filepath) {
                 const filepath = event.data.filepath;
                 const metadata = event.data.metadata || {};
-
-                console.log('[GeomPack VTK Textured] Loading mesh via postMessage:', filepath);
 
                 const success = await loadMesh(filepath, metadata);
 
@@ -680,7 +804,6 @@
             }
         });
 
-        console.log('[GeomPack VTK Textured Viewer] Ready. GLTF support:', gltfSupported);
         loading.textContent = gltfSupported ?
             'Ready to load textured mesh (GLB/GLTF)' :
             'Ready - GLTFImporter loading...';

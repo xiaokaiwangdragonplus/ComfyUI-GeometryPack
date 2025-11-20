@@ -11,14 +11,12 @@ app.registerExtension({
     name: "geompack.meshpreview.vtk.textured",
 
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
-        if (nodeData.name === "GeomPackPreviewMeshVTKTextured") {
+        if (nodeData.name === "GeomPackPreviewMeshVTKWithTexture") {
             console.log("[GeomPack] Registering Preview Mesh (VTK with Textures) node");
 
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function() {
                 const r = onNodeCreated ? onNodeCreated.apply(this, arguments) : undefined;
-
-                console.log("[GeomPack VTK Textured DEBUG] Creating node widget");
 
                 // Create container for viewer + info panel
                 const container = document.createElement("div");
@@ -58,14 +56,10 @@ app.registerExtension({
                 container.appendChild(infoPanel);
 
                 // Add widget with required options
-                console.log("[GeomPack VTK Textured DEBUG] About to call addDOMWidget");
-
                 const widget = this.addDOMWidget("preview_vtk_textured", "MESH_PREVIEW_VTK_TEXTURED", container, {
                     getValue() { return ""; },
                     setValue(v) { }
                 });
-
-                console.log("[GeomPack VTK Textured DEBUG] Widget created:", widget);
 
                 widget.computeSize = () => [512, 640];  // Increased height for viewer + info panel
 
@@ -76,7 +70,6 @@ app.registerExtension({
                 // Track iframe load state
                 let iframeLoaded = false;
                 iframe.addEventListener('load', () => {
-                    console.log("[GeomPack VTK Textured DEBUG] Iframe loaded");
                     iframeLoaded = true;
                 });
 
@@ -138,18 +131,15 @@ app.registerExtension({
 
                 // Set initial node size (increased for info panel)
                 this.setSize([512, 640]);
-                console.log("[GeomPack VTK Textured DEBUG] Node size set to [512, 640]");
 
                 // Handle execution
                 const onExecuted = this.onExecuted;
                 this.onExecuted = function(message) {
-                    console.log("[GeomPack VTK Textured] onExecuted called with message:", message);
                     onExecuted?.apply(this, arguments);
 
                     // The message IS the UI data (not message.ui)
                     if (message?.mesh_file && message.mesh_file[0]) {
                         const filename = message.mesh_file[0];
-                        console.log(`[GeomPack VTK Textured] Loading mesh: ${filename}`);
 
                         // Update mesh info panel with metadata
                         const vertices = message.vertex_count?.[0] || 'N/A';
@@ -232,7 +222,6 @@ app.registerExtension({
                         // Function to send message
                         const sendMessage = () => {
                             if (iframe.contentWindow) {
-                                console.log(`[GeomPack VTK Textured] Sending postMessage to iframe: ${filepath}`);
                                 iframe.contentWindow.postMessage({
                                     type: "LOAD_MESH",
                                     filepath: filepath,
@@ -246,10 +235,8 @@ app.registerExtension({
 
                         // Send message after iframe is loaded
                         if (iframeLoaded) {
-                            console.log("[GeomPack VTK Textured DEBUG] Iframe already loaded, sending immediately");
                             sendMessage();
                         } else {
-                            console.log("[GeomPack VTK Textured DEBUG] Waiting for iframe to load...");
                             setTimeout(sendMessage, 500);
                         }
                     } else {

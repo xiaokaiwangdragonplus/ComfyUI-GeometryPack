@@ -12,7 +12,7 @@ app.registerExtension({
     name: "geompack.meshpreview.dual",
 
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
-        console.log('[GeomPack Dual JS] beforeRegisterNodeDef called for:', nodeData.name);
+        // console.log('[GeomPack Dual JS] beforeRegisterNodeDef called for:', nodeData.name);
         if (nodeData.name === "GeomPackPreviewMeshDual") {
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function() {
