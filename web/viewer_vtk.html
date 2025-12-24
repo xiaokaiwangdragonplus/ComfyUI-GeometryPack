@@ -479,7 +479,27 @@
                 saveButton.disabled = true;
                 saveButton.textContent = 'Saving...';
 
-                const response = await fetch('/geometrypack/save_preview', {
+                // Get base path for subpath deployments
+                const getBasePath = () => {
+                    try {
+                        const pathname = window.location.pathname;
+                        const extensionsIndex = pathname.indexOf('/extensions/');
+                        if (extensionsIndex > 0) {
+                            return pathname.substring(0, extensionsIndex);
+                        }
+                        if (pathname && pathname !== '/' && pathname.endsWith('/')) {
+                            return pathname.slice(0, -1);
+                        }
+                        return '';
+                    } catch (e) {
+                        return '';
+                    }
+                };
+                
+                const basePath = getBasePath();
+                const saveUrl = `${basePath}/geometrypack/save_preview`;
+                console.log('[GeomPack VTK Viewer] Saving preview to:', saveUrl);
+                const response = await fetch(saveUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ temp_filename: currentFilename })

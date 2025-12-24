@@ -4,52 +4,9 @@
  */
 
 import { app } from "../../../scripts/app.js";
+import { EXTENSION_FOLDER, getBasePath, getViewerUrl, getFileViewUrl, getApiUrl } from "./utils/path_utils.js";
 
-// Auto-detect extension folder name (handles ComfyUI-GeometryPack or comfyui-geometrypack)
-const EXTENSION_FOLDER = (() => {
-    const url = import.meta.url;
-    const match = url.match(/\/extensions\/([^/]+)\//);
-    return match ? match[1] : "ComfyUI-GeometryPack";
-})();
 
-// Get base path (handles subpath deployments like /dev/sd-comfyui)
-const getBasePath = () => {
-    try {
-        // First try to get from import.meta.url (JS files are always loaded via /extensions/ path)
-        const jsUrl = import.meta.url;
-        console.log("[GeomPack Preview] getBasePath - import.meta.url:", jsUrl);
-        // Match: protocol://domain/base/path/extensions/...
-        // Capture the base path (everything between domain and /extensions/)
-        const jsMatch = jsUrl.match(/https?:\/\/[^\/]+(\/.*?)\/extensions\//);
-        if (jsMatch && jsMatch[1]) {
-            console.log("[GeomPack Preview] getBasePath - extracted from import.meta.url:", jsMatch[1]);
-            return jsMatch[1];
-        }
-        
-        // Fallback to window.location.pathname
-        const pathname = window.location.pathname;
-        console.log("[GeomPack Preview] getBasePath - window.location.pathname:", pathname);
-        const extensionsIndex = pathname.indexOf('/extensions/');
-        if (extensionsIndex > 0) {
-            const basePath = pathname.substring(0, extensionsIndex);
-            console.log("[GeomPack Preview] getBasePath - extracted from pathname (extensions found):", basePath);
-            return basePath;
-        }
-        
-        // If pathname is like '/dev/sd-comfyui/', use it directly (remove trailing slash)
-        if (pathname && pathname !== '/' && pathname.endsWith('/')) {
-            const basePath = pathname.slice(0, -1);
-            console.log("[GeomPack Preview] getBasePath - extracted from pathname (trailing slash):", basePath);
-            return basePath;
-        }
-        
-        console.log("[GeomPack Preview] getBasePath - returning empty string");
-        return '';
-    } catch (e) {
-        console.error("[GeomPack Preview] getBasePath - error:", e);
-        return '';
-    }
-};
 
 console.log("[GeomPack] Loading mesh preview extension...");
 
@@ -77,8 +34,8 @@ app.registerExtension({
                 iframe.style.aspectRatio = "1";
 
                 // Point to our HTML viewer (with cache buster)
-                const basePath = getBasePath();
-                iframe.src = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer.html?v=` + Date.now();
+                const viewerUrl = getViewerUrl('viewer.html');
+                iframe.src = viewerUrl;
 
                 // Add widget with required options
                 console.log("[GeomPack DEBUG] About to call addDOMWidget");
@@ -127,7 +84,8 @@ app.registerExtension({
                         console.log(`[GeomPack] Loading mesh: ${filename}`);
 
                         // ComfyUI serves output files via /view API endpoint
-                        const filepath = `/view?filename=${encodeURIComponent(filename)}&type=output&subfolder=`;
+                        const filepath = getFileViewUrl(filename, 'output', '');
+                        console.log("[GeomPack Preview] Constructed filepath:", filepath);
 
                         // Send message to iframe (with delay to ensure iframe is loaded)
                         setTimeout(() => {

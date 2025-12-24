@@ -4,52 +4,9 @@
  */
 
 import { app } from "../../../scripts/app.js";
+import { EXTENSION_FOLDER, getBasePath, getViewerUrl, getFileViewUrl, getApiUrl } from "./utils/path_utils.js";
 
-// Auto-detect extension folder name
-const EXTENSION_FOLDER = (() => {
-    const url = import.meta.url;
-    const match = url.match(/\/extensions\/([^/]+)\//);
-    return match ? match[1] : "ComfyUI-GeometryPack";
-})();
 
-// Get base path (handles subpath deployments like /dev/sd-comfyui)
-const getBasePath = () => {
-    try {
-        // First try to get from import.meta.url (JS files are always loaded via /extensions/ path)
-        const jsUrl = import.meta.url;
-        console.log("[GeomPack Analysis] getBasePath - import.meta.url:", jsUrl);
-        // Match: protocol://domain/base/path/extensions/...
-        // Capture the base path (everything between domain and /extensions/)
-        const jsMatch = jsUrl.match(/https?:\/\/[^\/]+(\/.*?)\/extensions\//);
-        if (jsMatch && jsMatch[1]) {
-            console.log("[GeomPack Analysis] getBasePath - extracted from import.meta.url:", jsMatch[1]);
-            return jsMatch[1];
-        }
-        
-        // Fallback to window.location.pathname
-        const pathname = window.location.pathname;
-        console.log("[GeomPack Analysis] getBasePath - window.location.pathname:", pathname);
-        const extensionsIndex = pathname.indexOf('/extensions/');
-        if (extensionsIndex > 0) {
-            const basePath = pathname.substring(0, extensionsIndex);
-            console.log("[GeomPack Analysis] getBasePath - extracted from pathname (extensions found):", basePath);
-            return basePath;
-        }
-        
-        // If pathname is like '/dev/sd-comfyui/', use it directly (remove trailing slash)
-        if (pathname && pathname !== '/' && pathname.endsWith('/')) {
-            const basePath = pathname.slice(0, -1);
-            console.log("[GeomPack Analysis] getBasePath - extracted from pathname (trailing slash):", basePath);
-            return basePath;
-        }
-        
-        console.log("[GeomPack Analysis] getBasePath - returning empty string");
-        return '';
-    } catch (e) {
-        console.error("[GeomPack Analysis] getBasePath - error:", e);
-        return '';
-    }
-};
 
 app.registerExtension({
     name: "geompack.meshpreview.analysis",
@@ -147,7 +104,9 @@ app.registerExtension({
                     findBtn.textContent = "...";
 
                     try {
-                        const response = await fetch("/geompack/find_location", {
+                        const findLocationUrl = getApiUrl('/geompack/find_location');
+                        console.log("[GeomPack Analysis] Fetching find_location from:", findLocationUrl);
+                        const response = await fetch(findLocationUrl, {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
@@ -231,7 +190,9 @@ app.registerExtension({
                         btn.textContent = "...";
 
                         try {
-                            const response = await fetch("/geompack/analyze", {
+                            const analyzeUrl = getApiUrl('/geompack/analyze');
+                            console.log("[GeomPack Analysis] Fetching analyze from:", analyzeUrl);
+                            const response = await fetch(analyzeUrl, {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({
@@ -261,7 +222,9 @@ app.registerExtension({
                                 updateInfoPanel();
 
                                 // Reload mesh in viewer
-                                const filepath = `/view?filename=${encodeURIComponent(result.filename)}&type=output&subfolder=`;
+                                const basePath = getBasePath();
+                                const filepath = `${basePath}/view?filename=${encodeURIComponent(result.filename)}&type=output&subfolder=`;
+                                console.log("[GeomPack Analysis] Constructed filepath (from analysis):", filepath);
                                 if (iframe.contentWindow) {
                                     iframe.contentWindow.postMessage({
                                         type: "LOAD_MESH",
@@ -303,9 +266,9 @@ app.registerExtension({
                 iframe.style.minHeight = "0";
                 iframe.style.border = "none";
                 iframe.style.backgroundColor = "#2a2a2a";
-                const basePath = getBasePath();
-                console.log("[GeomPack BBox VTK] Base path:", basePath);
-                iframe.src = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer_vtk.html?v=` + Date.now();
+                const viewerUrl = getViewerUrl('viewer_vtk.html');
+                console.log("[GeomPack Analysis] Setting initial iframe.src to:", viewerUrl);
+                iframe.src = viewerUrl;
 
                 // Track iframe load state
                 let iframeLoaded = false;
@@ -404,7 +367,8 @@ app.registerExtension({
                         updateInfoPanel();
 
                         // Load mesh in viewer
-                        const filepath = `/view?filename=${encodeURIComponent(filename)}&type=output&subfolder=`;
+                        const filepath = getFileViewUrl(filename, 'output', '');
+                        console.log("[GeomPack Analysis] Constructed filepath:", filepath);
 
                         const sendMessage = () => {
                             if (iframe.contentWindow) {

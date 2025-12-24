@@ -5,52 +5,9 @@
  */
 
 import { app } from "../../../scripts/app.js";
+import { EXTENSION_FOLDER, getBasePath, getViewerUrl, getFileViewUrl, getApiUrl } from "./utils/path_utils.js";
 
-// Auto-detect extension folder name (handles ComfyUI-GeometryPack or comfyui-geometrypack)
-const EXTENSION_FOLDER = (() => {
-    const url = import.meta.url;
-    const match = url.match(/\/extensions\/([^/]+)\//);
-    return match ? match[1] : "ComfyUI-GeometryPack";
-})();
 
-// Get base path (handles subpath deployments like /dev/sd-comfyui)
-const getBasePath = () => {
-    try {
-        // First try to get from import.meta.url (JS files are always loaded via /extensions/ path)
-        const jsUrl = import.meta.url;
-        console.log("[GeomPack Dual] getBasePath - import.meta.url:", jsUrl);
-        // Match: protocol://domain/base/path/extensions/...
-        // Capture the base path (everything between domain and /extensions/)
-        const jsMatch = jsUrl.match(/https?:\/\/[^\/]+(\/.*?)\/extensions\//);
-        if (jsMatch && jsMatch[1]) {
-            console.log("[GeomPack Dual] getBasePath - extracted from import.meta.url:", jsMatch[1]);
-            return jsMatch[1];
-        }
-        
-        // Fallback to window.location.pathname
-        const pathname = window.location.pathname;
-        console.log("[GeomPack Dual] getBasePath - window.location.pathname:", pathname);
-        const extensionsIndex = pathname.indexOf('/extensions/');
-        if (extensionsIndex > 0) {
-            const basePath = pathname.substring(0, extensionsIndex);
-            console.log("[GeomPack Dual] getBasePath - extracted from pathname (extensions found):", basePath);
-            return basePath;
-        }
-        
-        // If pathname is like '/dev/sd-comfyui/', use it directly (remove trailing slash)
-        if (pathname && pathname !== '/' && pathname.endsWith('/')) {
-            const basePath = pathname.slice(0, -1);
-            console.log("[GeomPack Dual] getBasePath - extracted from pathname (trailing slash):", basePath);
-            return basePath;
-        }
-        
-        console.log("[GeomPack Dual] getBasePath - returning empty string");
-        return '';
-    } catch (e) {
-        console.error("[GeomPack Dual] getBasePath - error:", e);
-        return '';
-    }
-};
 
 console.log('[GeomPack Dual JS] Loading mesh_preview_dual.js extension - v2 WITH INCREASED NODE HEIGHT (680px)');
 
@@ -86,8 +43,8 @@ app.registerExtension({
 
                 // Point to unified dual VTK.js HTML viewer (with cache buster)
                 // Note: viewer will be dynamically switched based on mode in onExecuted
-                const basePath = getBasePath();
-                iframe.src = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer_dual.html?v=` + Date.now();
+                const viewerUrl = getViewerUrl('viewer_dual.html');
+                iframe.src = viewerUrl;
 
                 // Track current viewer type to avoid unnecessary reloads
                 let currentViewerType = "fields";
@@ -187,13 +144,13 @@ app.registerExtension({
 
                     if (layout === 'slider') {
                         viewerType = "slider";
-                        viewerUrl = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer_dual_slider.html`;
+                        viewerUrl = getViewerUrl('viewer_dual_slider.html', false);
                     } else if (mode === "texture") {
                         viewerType = "texture";
-                        viewerUrl = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer_dual_textured.html`;
+                        viewerUrl = getViewerUrl('viewer_dual_textured.html', false);
                     } else {
                         viewerType = "fields";
-                        viewerUrl = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer_dual.html`;
+                        viewerUrl = getViewerUrl('viewer_dual.html', false);
                     }
 
                     let infoHTML = '';
@@ -291,8 +248,10 @@ app.registerExtension({
                         infoHTML += '</div>';
 
                         // Prepare file paths
-                        const filepath1 = `/view?filename=${encodeURIComponent(filename1)}&type=output&subfolder=`;
-                        const filepath2 = `/view?filename=${encodeURIComponent(filename2)}&type=output&subfolder=`;
+                        const filepath1 = getFileViewUrl(filename1, 'output', '');
+                        const filepath2 = getFileViewUrl(filename2, 'output', '');
+                        console.log("[GeomPack Dual] Constructed filepath1:", filepath1);
+                        console.log("[GeomPack Dual] Constructed filepath2:", filepath2);
 
                         postMessageData.mesh1Filepath = filepath1;
                         postMessageData.mesh2Filepath = filepath2;
@@ -361,7 +320,8 @@ app.registerExtension({
                         infoHTML += '</div>';
 
                         // Prepare file path
-                        const filepath = `/view?filename=${encodeURIComponent(filename)}&type=output&subfolder=`;
+                        const filepath = getFileViewUrl(filename, 'output', '');
+                        console.log("[GeomPack Dual] Constructed single filepath:", filepath);
 
                         postMessageData.meshFilepath = filepath;
                         postMessageData.opacity1 = message.opacity_1?.[0] || 1.0;
