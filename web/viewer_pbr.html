@@ -97,11 +97,18 @@
         // Get base path (handles subpath deployments like /dev/sd-comfyui)
         const getBasePath = () => {
             try {
+                // First try to get from window.location.pathname (when viewing HTML file directly)
                 const pathname = window.location.pathname;
                 const extensionsIndex = pathname.indexOf('/extensions/');
                 if (extensionsIndex > 0) {
                     return pathname.substring(0, extensionsIndex);
                 }
+                
+                // If pathname is like '/dev/sd-comfyui/', use it directly (remove trailing slash)
+                if (pathname && pathname !== '/' && pathname.endsWith('/')) {
+                    return pathname.slice(0, -1);
+                }
+                
                 return '';
             } catch (e) {
                 return '';

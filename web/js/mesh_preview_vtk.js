@@ -15,13 +15,38 @@ const EXTENSION_FOLDER = (() => {
 // Get base path (handles subpath deployments like /dev/sd-comfyui)
 const getBasePath = () => {
     try {
+        // First try to get from import.meta.url (JS files are always loaded via /extensions/ path)
+        const jsUrl = import.meta.url;
+        console.log("[GeomPack] getBasePath - import.meta.url:", jsUrl);
+        // Match: protocol://domain/base/path/extensions/...
+        // Capture the base path (everything between domain and /extensions/)
+        const jsMatch = jsUrl.match(/https?:\/\/[^\/]+(\/.*?)\/extensions\//);
+        if (jsMatch && jsMatch[1]) {
+            console.log("[GeomPack] getBasePath - extracted from import.meta.url:", jsMatch[1]);
+            return jsMatch[1];
+        }
+        
+        // Fallback to window.location.pathname
         const pathname = window.location.pathname;
+        console.log("[GeomPack] getBasePath - window.location.pathname:", pathname);
         const extensionsIndex = pathname.indexOf('/extensions/');
         if (extensionsIndex > 0) {
-            return pathname.substring(0, extensionsIndex);
+            const basePath = pathname.substring(0, extensionsIndex);
+            console.log("[GeomPack] getBasePath - extracted from pathname (extensions found):", basePath);
+            return basePath;
         }
+        
+        // If pathname is like '/dev/sd-comfyui/', use it directly (remove trailing slash)
+        if (pathname && pathname !== '/' && pathname.endsWith('/')) {
+            const basePath = pathname.slice(0, -1);
+            console.log("[GeomPack] getBasePath - extracted from pathname (trailing slash):", basePath);
+            return basePath;
+        }
+        
+        console.log("[GeomPack] getBasePath - returning empty string");
         return '';
     } catch (e) {
+        console.error("[GeomPack] getBasePath - error:", e);
         return '';
     }
 };
@@ -58,7 +83,10 @@ app.registerExtension({
                 // Note: viewer will be dynamically switched based on mode in onExecuted
                 // Use unified v2 viewer with modular architecture
                 const basePath = getBasePath();
-                iframe.src = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer_vtk.html?v=` + Date.now();
+                console.log("[GeomPack] Base path:", basePath);
+                const viewerUrl = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer_vtk.html?v=` + Date.now();
+                console.log("[GeomPack] Setting initial iframe.src to:", viewerUrl);
+                iframe.src = viewerUrl;
 
                 // Track current viewer type to avoid unnecessary reloads
                 let currentViewerType = "fields";
@@ -177,6 +205,8 @@ app.registerExtension({
                         } else {
                             viewerUrl = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer_vtk.html`;
                         }
+                        console.log("[GeomPack] Base path:", basePath, "viewerType:", viewerType);
+                        console.log("[GeomPack] Setting viewerUrl to:", viewerUrl);
 
                         // Update mesh info panel with metadata
                         const vertices = message.vertex_count?.[0] || 'N/A';
@@ -303,7 +333,9 @@ app.registerExtension({
                             iframe.addEventListener('load', onViewerLoaded, { once: true });
 
                             // Change iframe src to trigger reload
-                            iframe.src = viewerUrl + "?v=" + Date.now();
+                            const reloadUrl = viewerUrl + "?v=" + Date.now();
+                            console.log("[GeomPack] Reloading iframe with URL:", reloadUrl);
+                            iframe.src = reloadUrl;
                         } else {
                             // No viewer change needed, send message immediately or after short delay
                             if (iframeLoaded) {
