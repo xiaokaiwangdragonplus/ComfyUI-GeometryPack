@@ -94,11 +94,26 @@
         let currentMesh = null;
         let envMapLoaded = false;
 
+        // Get base path (handles subpath deployments like /dev/sd-comfyui)
+        const getBasePath = () => {
+            try {
+                const pathname = window.location.pathname;
+                const extensionsIndex = pathname.indexOf('/extensions/');
+                if (extensionsIndex > 0) {
+                    return pathname.substring(0, extensionsIndex);
+                }
+                return '';
+            } catch (e) {
+                return '';
+            }
+        };
+
         // Get the extension folder path from the current URL
         const getExtensionPath = () => {
             const url = window.location.href;
             const match = url.match(/\/extensions\/([^/]+)\//);
-            return match ? `/extensions/${match[1]}` : '/extensions/ComfyUI-GeometryPack';
+            const basePath = getBasePath();
+            return match ? `${basePath}/extensions/${match[1]}` : `${basePath}/extensions/ComfyUI-GeometryPack`;
         };
 
         // Load environment map for PBR reflections

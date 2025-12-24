@@ -13,6 +13,20 @@ const EXTENSION_FOLDER = (() => {
     return match ? match[1] : "ComfyUI-GeometryPack";
 })();
 
+// Get base path (handles subpath deployments like /dev/sd-comfyui)
+const getBasePath = () => {
+    try {
+        const pathname = window.location.pathname;
+        const extensionsIndex = pathname.indexOf('/extensions/');
+        if (extensionsIndex > 0) {
+            return pathname.substring(0, extensionsIndex);
+        }
+        return '';
+    } catch (e) {
+        return '';
+    }
+};
+
 console.log('[GeomPack Dual JS] Loading mesh_preview_dual.js extension - v2 WITH INCREASED NODE HEIGHT (680px)');
 
 app.registerExtension({
@@ -47,7 +61,8 @@ app.registerExtension({
 
                 // Point to unified dual VTK.js HTML viewer (with cache buster)
                 // Note: viewer will be dynamically switched based on mode in onExecuted
-                iframe.src = `/extensions/${EXTENSION_FOLDER}/viewer_dual.html?v=` + Date.now();
+                const basePath = getBasePath();
+                iframe.src = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer_dual.html?v=` + Date.now();
 
                 // Track current viewer type to avoid unnecessary reloads
                 let currentViewerType = "fields";
@@ -142,17 +157,18 @@ app.registerExtension({
 
                     // Determine which viewer to use based on mode and layout
                     let viewerType;
+                    const basePath = getBasePath();
                     let viewerUrl;
 
                     if (layout === 'slider') {
                         viewerType = "slider";
-                        viewerUrl = `/extensions/${EXTENSION_FOLDER}/viewer_dual_slider.html`;
+                        viewerUrl = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer_dual_slider.html`;
                     } else if (mode === "texture") {
                         viewerType = "texture";
-                        viewerUrl = `/extensions/${EXTENSION_FOLDER}/viewer_dual_textured.html`;
+                        viewerUrl = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer_dual_textured.html`;
                     } else {
                         viewerType = "fields";
-                        viewerUrl = `/extensions/${EXTENSION_FOLDER}/viewer_dual.html`;
+                        viewerUrl = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer_dual.html`;
                     }
 
                     let infoHTML = '';

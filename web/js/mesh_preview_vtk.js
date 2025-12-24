@@ -12,6 +12,20 @@ const EXTENSION_FOLDER = (() => {
     return match ? match[1] : "ComfyUI-GeometryPack";
 })();
 
+// Get base path (handles subpath deployments like /dev/sd-comfyui)
+const getBasePath = () => {
+    try {
+        const pathname = window.location.pathname;
+        const extensionsIndex = pathname.indexOf('/extensions/');
+        if (extensionsIndex > 0) {
+            return pathname.substring(0, extensionsIndex);
+        }
+        return '';
+    } catch (e) {
+        return '';
+    }
+};
+
 app.registerExtension({
     name: "geompack.meshpreview.vtk",
 
@@ -43,7 +57,8 @@ app.registerExtension({
                 // Point to VTK.js HTML viewer (with cache buster)
                 // Note: viewer will be dynamically switched based on mode in onExecuted
                 // Use unified v2 viewer with modular architecture
-                iframe.src = `/extensions/${EXTENSION_FOLDER}/viewer_vtk.html?v=` + Date.now();
+                const basePath = getBasePath();
+                iframe.src = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer_vtk.html?v=` + Date.now();
 
                 // Track current viewer type to avoid unnecessary reloads
                 let currentViewerType = "fields";
@@ -153,13 +168,14 @@ app.registerExtension({
                         const mode = message.mode?.[0] || "fields";
 
                         // Determine which viewer HTML to use
+                        const basePath = getBasePath();
                         let viewerUrl;
                         if (viewerType === "pbr") {
-                            viewerUrl = `/extensions/${EXTENSION_FOLDER}/viewer_pbr.html`;
+                            viewerUrl = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer_pbr.html`;
                         } else if (viewerType === "texture") {
-                            viewerUrl = `/extensions/${EXTENSION_FOLDER}/viewer_vtk_textured.html`;
+                            viewerUrl = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer_vtk_textured.html`;
                         } else {
-                            viewerUrl = `/extensions/${EXTENSION_FOLDER}/viewer_vtk.html`;
+                            viewerUrl = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer_vtk.html`;
                         }
 
                         // Update mesh info panel with metadata

@@ -12,6 +12,20 @@ const EXTENSION_FOLDER = (() => {
     return match ? match[1] : "ComfyUI-GeometryPack";
 })();
 
+// Get base path (handles subpath deployments like /dev/sd-comfyui)
+const getBasePath = () => {
+    try {
+        const pathname = window.location.pathname;
+        const extensionsIndex = pathname.indexOf('/extensions/');
+        if (extensionsIndex > 0) {
+            return pathname.substring(0, extensionsIndex);
+        }
+        return '';
+    } catch (e) {
+        return '';
+    }
+};
+
 console.log("[GeomPack Gaussian] Loading extension...");
 
 app.registerExtension({
@@ -43,7 +57,8 @@ app.registerExtension({
                 iframe.style.backgroundColor = "#1a1a1a";
 
                 // Point to gsplat.js HTML viewer (with cache buster)
-                iframe.src = `/extensions/${EXTENSION_FOLDER}/viewer_gaussian.html?v=` + Date.now();
+                const basePath = getBasePath();
+                iframe.src = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer_gaussian.html?v=` + Date.now();
 
                 // Create info panel
                 const infoPanel = document.createElement("div");

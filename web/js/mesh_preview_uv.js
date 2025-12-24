@@ -12,6 +12,20 @@ const EXTENSION_FOLDER = (() => {
     return match ? match[1] : "ComfyUI-GeometryPack";
 })();
 
+// Get base path (handles subpath deployments like /dev/sd-comfyui)
+const getBasePath = () => {
+    try {
+        const pathname = window.location.pathname;
+        const extensionsIndex = pathname.indexOf('/extensions/');
+        if (extensionsIndex > 0) {
+            return pathname.substring(0, extensionsIndex);
+        }
+        return '';
+    } catch (e) {
+        return '';
+    }
+};
+
 console.log("[GeomPack] Loading UV mesh preview extension...");
 
 app.registerExtension({
@@ -36,7 +50,8 @@ app.registerExtension({
                 iframe.style.aspectRatio = "2";  // Wide aspect for split view
 
                 // Point to our UV viewer HTML
-                iframe.src = `/extensions/${EXTENSION_FOLDER}/viewer_uv.html?v=` + Date.now();
+                const basePath = getBasePath();
+                iframe.src = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer_uv.html?v=` + Date.now();
 
                 // Add widget
                 const widget = this.addDOMWidget("uv_preview", "MESH_UV_PREVIEW", iframe, {

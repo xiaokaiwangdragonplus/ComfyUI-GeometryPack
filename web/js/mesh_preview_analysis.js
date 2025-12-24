@@ -12,6 +12,20 @@ const EXTENSION_FOLDER = (() => {
     return match ? match[1] : "ComfyUI-GeometryPack";
 })();
 
+// Get base path (handles subpath deployments like /dev/sd-comfyui)
+const getBasePath = () => {
+    try {
+        const pathname = window.location.pathname;
+        const extensionsIndex = pathname.indexOf('/extensions/');
+        if (extensionsIndex > 0) {
+            return pathname.substring(0, extensionsIndex);
+        }
+        return '';
+    } catch (e) {
+        return '';
+    }
+};
+
 app.registerExtension({
     name: "geompack.meshpreview.analysis",
 
@@ -264,7 +278,8 @@ app.registerExtension({
                 iframe.style.minHeight = "0";
                 iframe.style.border = "none";
                 iframe.style.backgroundColor = "#2a2a2a";
-                iframe.src = `/extensions/${EXTENSION_FOLDER}/viewer_vtk.html?v=` + Date.now();
+                const basePath = getBasePath();
+                iframe.src = `${basePath}/extensions/${EXTENSION_FOLDER}/viewer_vtk.html?v=` + Date.now();
 
                 // Track iframe load state
                 let iframeLoaded = false;
